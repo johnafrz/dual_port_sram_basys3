@@ -1,0 +1,68 @@
+module dual_port_sram_basys3 (
+    input wire clk,                // 100MHz onboard clock
+    input wire rst,                // Active-high reset (btn[3])
+
+    input wire [15:0] sw,          // 16 switches for input address and data
+    input wire btn_write,          // Button for write enable (btn[0])
+
+    output reg [7:0] led           // LEDs to show read data
+);
+
+// Memory declaration: 1024 x 8 bits
+reg [7:0] mem [0:1023];
+
+// Clock divider (to ~1Hz for visible behavior)
+reg [25:0] clk_div;
+reg slow_clk;
+
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        clk_div <= 0;
+        slow_clk <= 0;
+    end else begin
+        if (clk_div == 26'd49999999) begin
+            clk_div <= 0;
+            slow_clk <= ~slow_clk;
+        end else
+            clk_div <= clk_div + 1;
+    end
+end
+
+// Address/Data assignments
+wire [9:0] addr_a = {sw[9:5], 5'b00000};  // Port A (Write): Upper switches (address), lower fixed
+wire [7:0] din_a = {3'b000, sw[4:0]};     // Data input from lower switches
+
+wire [9:0] addr_b = {sw[14:10], 5'b00000}; // Port B (Read): different switches
+
+// Debounce logic for write button
+reg btn_write_sync, btn_write_prev;
+wire we_a;
+
+always @(posedge slow_clk or posedge rst) begin
+    if (rst) begin
+        btn_write_sync <= 0;
+        btn_write_prev <= 0;
+    end else begin
+        btn_write_prev <= btn_write_sync;
+        btn_write_sync <= btn_write;
+    end
+end
+
+assign we_a = btn_write_sync & ~btn_write_prev; // Single pulse write enable
+
+// Port A (write) and Port B (read) logic
+always @(posedge slow_clk or posedge rst) begin
+    if (rst) begin
+        led <= 8'b0;
+    end else begin
+        // Port A: write operation
+        if (we_a) begin
+            mem[addr_a] <= din_a;
+        end
+
+        // Port B: continuous read operation
+        led <= mem[addr_b];
+    end
+end
+
+endmodule
